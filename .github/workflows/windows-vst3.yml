@@ -58,3 +58,25 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
+
+      - name: Stage Windows binaries
+        shell: pwsh
+        run: |
+          $dist = Join-Path $env:RUNNER_TEMP "dexter-us-line"
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+          $cli = Get-ChildItem -Path build -Recurse -File -Filter "line.exe" |
+            Select-Object -First 1
+          $plugin = Get-ChildItem -Path build -Recurse -Directory -Filter "Line.vst3" |
+            Select-Object -First 1
+          if (-not $cli -or -not $plugin) {
+            throw "Expected both line.exe and Line.vst3 build outputs."
+          }
+          Copy-Item $cli.FullName (Join-Path $dist "line.exe")
+          Copy-Item $plugin.FullName (Join-Path $dist "Line.vst3") -Recurse -Force
+
+      - name: Upload Windows binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: dexter-us-line-windows
+          path: ${{ runner.temp }}/dexter-us-line
+          if-no-files-found: error

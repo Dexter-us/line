@@ -1,6 +1,7 @@
 #include "line_controller.hpp"
 
 #include "line_cids.hpp"
+#include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/base/ustring.h"
 #include "vstgui/lib/controls/cbuttons.h"
 #include "vstgui/lib/controls/ctextedit.h"
@@ -115,15 +116,16 @@ void LineController::willClose(VSTGUI::VST3Editor*) {
 bool LineController::writeText(IBStream* state, const std::string& text) {
   if (!state || text.size() > kMaxSavedPattern)
     return false;
-  const int32 length = static_cast<int32>(text.size());
+  int32 length = static_cast<int32>(text.size());
   int32 written = 0;
   if (state->write(&length, sizeof(length), &written) != kResultOk ||
       written != sizeof(length))
     return false;
   if (length == 0)
     return true;
+  std::string buffer = text;
   written = 0;
-  return state->write(text.data(), length, &written) == kResultOk &&
+  return state->write(buffer.data(), length, &written) == kResultOk &&
          written == length;
 }
 
