@@ -1,0 +1,60 @@
+name: Windows CLI and VST3 validation
+
+on:
+  push:
+    branches:
+      - ableton_link_compatible
+  pull_request:
+    branches:
+      - ableton_link_compatible
+  workflow_dispatch:
+
+jobs:
+  windows-vst3:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout project and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure Windows CLI and VST3
+        run: >-
+          cmake -S . -B build -A x64
+          -DLINE_BUILD_VST3=ON
+          -DBUILD_TESTING=ON
+          -DRTMIDI_API_JACK=OFF
+          -DRTMIDI_BUILD_TESTING=OFF
+          -DRTMIDI_BUILD_STATIC_LIBS=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 2
+
+      - name: Run tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Download pluginval
+        shell: pwsh
+        run: |
+          Invoke-WebRequest `
+            -Uri "https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip" `
+            -OutFile "$env:RUNNER_TEMP\pluginval.zip"
+          Expand-Archive "$env:RUNNER_TEMP\pluginval.zip" "$env:RUNNER_TEMP\pluginval"
+
+      - name: Validate VST3
+        shell: pwsh
+        run: |
+          $plugin = Get-ChildItem -Path build -Recurse -Directory -Filter "Line.vst3" |
+            Select-Object -First 1
+          if (-not $plugin) {
+            throw "The VST3 build did not produce Line.vst3."
+          }
+          $validator = Get-ChildItem -Path "$env:RUNNER_TEMP\pluginval" -Recurse -Filter "pluginval.exe" |
+            Select-Object -First 1
+          if (-not $validator) {
+            throw "pluginval.exe was not found in the downloaded archive."
+          }
+          & $validator.FullName --strictness-level 5 --validate $plugin.FullName
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }

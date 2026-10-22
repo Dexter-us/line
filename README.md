@@ -1,5 +1,55 @@
-# line [![line build macOS](https://github.com/pd3v/line/actions/workflows/cmake.yml/badge.svg)](https://github.com/pd3v/line/actions/workflows/cmake.yml)<!--&nbsp;[![Github All Releases](https://img.shields.io/github/downloads/pd3v/line/total.svg)]()</span>-->
-<span style ="font-size:12pt;font-weight:bold">A tiny command-line midi sequencer for live coding.</span> <span style ="font-size:10pt">(**ableton link** compatible version)</span> <span style ="font-size:11pt">
+# Line — Dexter U.S.
+
+**Dexter U.S. line** is a public MIT-licensed fork of [pd3v/line](https://github.com/pd3v/line).
+It keeps the live-coding command-line MIDI sequencer and adds a Windows build and a
+VST3 instrument. The VST3 faceplate reads **Dexter U.S. line**.
+
+The VST3 editor uses VSTGUI's `CTextEdit`. VSTGUI is licensed under the 3-clause BSD
+license, a permissive license compatible with an MIT-licensed project. Its notice is
+included in the VST3 SDK checkout used to build the plug-in.
+
+## Windows command-line build
+
+Install CMake and Visual Studio 2022 with the C++ desktop workload, then run from
+the repository root in a Visual Studio Developer PowerShell:
+
+```powershell
+cmake -S . -B build -A x64 -DBUILD_TESTING=ON
+cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
+.\build\Release\line.exe
+```
+
+The Windows command-line version uses the console for input and does not require
+GNU Readline. MIDI output is provided through RtMidi's Windows backend.
+
+## VST3 instrument
+
+Build the VST3 plug-in and command-line program together:
+
+```powershell
+cmake -S . -B build-vst3 -A x64 -DLINE_BUILD_VST3=ON -DBUILD_TESTING=ON
+cmake --build build-vst3 --config Release --parallel
+ctest --test-dir build-vst3 -C Release --output-on-failure
+```
+
+The plug-in is named **Line**, lists **Dexter U.S.** as its manufacturer, provides
+stereo audio and MIDI outputs, and follows the DAW transport and tempo. The editor
+accepts up to 255 characters in this supported pattern subset:
+
+- MIDI note numbers or note names such as `45`, `c3`, `as3`, and `eb4`
+- Chords such as `(c3 e3 g3)` and rests using `-`
+- Eighth-note steps with a leading dot, dotted-quarter steps with a trailing dot
+- Note velocity using `~.7` and tempo using `bpm120`
+
+The VST3 pattern editor is intentionally a focused live-coding input, not a port of
+every command in the original CLI's Lua parser. The Windows CI workflow runs the
+parser tests and validates the built plug-in with pluginval.
+
+---
+
+Original project: **A tiny command-line midi sequencer for live coding.**
+(**Ableton Link** compatible version)
 
 + Sends MIDI messages to a chosen MIDI channel. Default is 1.
 

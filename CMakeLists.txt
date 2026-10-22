@@ -4,6 +4,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 option(GIT_ACTION "Is Git Action" OFF)
 option(BUILD_17 "Building as C++17" ON)
+option(LINE_BUILD_VST3 "Build the Line VST3 instrument" OFF)
 
 if(APPLE AND NOT GIT_ACTION)
   if(BUILD_17)
@@ -22,29 +23,35 @@ endif()
 
 project(line VERSION 0.7.1)
 
+include(CTest)
+
+add_library(line_pattern STATIC plugin/line_pattern.cpp)
+target_compile_features(line_pattern PUBLIC cxx_std_17)
+target_include_directories(line_pattern PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin)
+
+if(BUILD_TESTING)
+  add_executable(line_pattern_tests tests/line_pattern_tests.cpp)
+  target_link_libraries(line_pattern_tests PRIVATE line_pattern)
+  add_test(NAME line_pattern_tests COMMAND line_pattern_tests)
+endif()
+
 add_executable("${PROJECT_NAME}" line.cpp)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/externals/lua)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/externals/lpeg)
+set(RTMIDI_API_JACK OFF CACHE BOOL "Do not require JACK for MIDI output" FORCE)
+set(RTMIDI_BUILD_STATIC_LIBS ON CACHE BOOL "Link RtMidi statically" FORCE)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/externals/rtmidi)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/externals/link/AbletonLinkConfig.cmake)
 
-FIND_PATH(READLINE_INCLUDE_PATH
-  NAMES readline
-  PATHS /opt/ /usr/
-)
-
-FIND_LIBRARY(READLINE_LIB_FILE
-  NAMES readline
-  PATHS /opt/ /usr/
-)
-
-get_filename_component(READLINE_LIB_PATH ${READLINE_LIB_FILE} PATH)
+if(NOT WIN32)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(READLINE REQUIRED IMPORTED_TARGET readline)
+endif()
 
 target_include_directories(
   ${PROJECT_NAME} PUBLIC
-  PRIVATE ${READLINE_INCLUDE_PATH}
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/externals/lua/
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/externals/lpeg/
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/externals/rtmidi/
@@ -53,7 +60,6 @@ target_include_directories(
 
 target_link_directories(
   ${PROJECT_NAME}
-  PRIVATE ${READLINE_LIB_PATH}/
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/build/externals/lua/
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/build/externals/lpeg/
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/build/externals/rtmidi/
@@ -66,11 +72,31 @@ target_compile_definitions(${PROJECT_NAME}
 
 target_link_libraries(
   ${PROJECT_NAME}
-  LINK_PRIVATE readline
   LINK_PRIVATE lua
   LINK_PRIVATE lpeg
   LINK_PRIVATE rtmidi
   Ableton::Link
 )
+
+if(NOT WIN32)
+  target_link_libraries(${PROJECT_NAME} PRIVATE PkgConfig::READLINE)
+endif()
+
+if(LINE_BUILD_VST3)
+  include(FetchContent)
+  set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
+  set(SMTG_ENABLE_VST3_PLUGIN_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(SMTG_ENABLE_VST3_HOSTING_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(SMTG_ENABLE_VSTGUI_SUPPORT ON CACHE BOOL "" FORCE)
+  FetchContent_Declare(
+    vst3sdk
+    GIT_REPOSITORY https://github.com/steinbergmedia/vst3sdk.git
+    GIT_TAG v3.7.9_build_61
+    GIT_SHALLOW TRUE
+    GIT_SUBMODULES_RECURSE TRUE
+  )
+  FetchContent_MakeAvailable(vst3sdk)
+  add_subdirectory(plugin/vst3)
+endif()
 
 install(TARGETS ${PROJECT_NAME})

@@ -50,6 +50,6 @@ target_compile_definitions(${PROJECT_NAME}
   PRIVATE -D${CURRENT_OS}
 )
 
-target_link_libraries(${PROJECT_NAME}
-  LINK_PRIVATE readline
-)
+if(NOT WIN32)
+  target_link_libraries(${PROJECT_NAME} LINK_PRIVATE readline)
+endif()

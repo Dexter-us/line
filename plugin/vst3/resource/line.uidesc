@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<vstgui-ui-description version="1">
+  <fonts>
+    <font name="LineTitle" font-name="Arial" size="26" bold="true"/>
+    <font name="LineBody" font-name="Arial" size="13" bold="false"/>
+    <font name="LineMono" font-name="Consolas" size="17" bold="false"/>
+  </fonts>
+  <colors>
+    <color name="LinePlate" rgba="#162121ff"/>
+    <color name="LinePanel" rgba="#202d2dff"/>
+    <color name="LineAccent" rgba="#e5a957ff"/>
+    <color name="LineInk" rgba="#f2eadcff"/>
+    <color name="LineMuted" rgba="#a9b4adff"/>
+    <color name="LineEditor" rgba="#0c1414ff"/>
+  </colors>
+  <template class="CViewContainer" name="Editor" origin="0, 0" size="640, 380"
+            background-color="LinePlate" background-color-draw-style="filled"
+            mouse-enabled="true" transparent="false">
+    <view class="CTextLabel" title="Dexter U.S. line" origin="28, 20" size="584, 38"
+          font="LineTitle" font-color="LineAccent" back-color="LinePlate"
+          frame-color="LinePlate" text-alignment="left" transparent="false"/>
+    <view class="CTextLabel" title="MIDI PATTERN INSTRUMENT" origin="30, 63" size="570, 22"
+          font="LineBody" font-color="LineMuted" back-color="LinePlate"
+          frame-color="LinePlate" text-alignment="left" transparent="false"/>
+    <view class="CViewContainer" origin="24, 100" size="592, 190"
+          background-color="LinePanel" background-color-draw-style="filled"
+          mouse-enabled="true" transparent="false">
+      <view class="CTextEdit" custom-view-name="LinePatternEditor" origin="18, 18"
+            size="556, 142" font="LineMono" font-color="LineInk"
+            back-color="LineEditor" frame-color="LineAccent" frame-width="1"
+            text-inset="10, 8" text-alignment="left" transparent="false"
+            immediate-text-change="true" style-no-frame="false"/>
+      <view class="CTextLabel" title="c3 e3 g3 c4   |   (c3 e3 g3)~.7   |   bpm120"
+            origin="18, 164" size="556, 18" font="LineBody"
+            font-color="LineMuted" back-color="LinePanel"
+            frame-color="LinePanel" text-alignment="left" transparent="false"/>
+    </view>
+    <view class="CTextButton" custom-view-name="LineRunButton" origin="26, 310"
+          size="132, 38" title="PLAY / STOP" font="LineBody"
+          font-color="LineInk" back-color="LinePanel" frame-color="LineAccent"/>
+    <view class="CTextLabel" custom-view-name="LineStatus" origin="176, 318"
+          size="430, 24" font="LineBody" font-color="LineMuted"
+          back-color="LinePlate" frame-color="LinePlate"
+          text-alignment="left" transparent="false"/>
+    <view class="CTextLabel" title="Audio + MIDI output follow the DAW transport and tempo."
+          origin="28, 356" size="584, 18" font="LineBody"
+          font-color="LineMuted" back-color="LinePlate"
+          frame-color="LinePlate" text-alignment="left" transparent="false"/>
+  </template>
+</vstgui-ui-description>

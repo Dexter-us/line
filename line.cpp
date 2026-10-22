@@ -8,6 +8,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <array>
 #include <chrono>
 #include <future>
 #include <mutex>
@@ -20,8 +21,12 @@
 #include <atomic>
 #include <regex>
 
-#include <readline/readline.h> 
+#if defined(_WIN32)
+#include "windows_readline.h"
+#else
+#include <readline/readline.h>
 #include <readline/history.h>
+#endif
 #include "externals/link/examples/linkaudio/AudioPlatform_Dummy.hpp"
 #include "externals/rtmidi/RtMidi.h"
 
@@ -133,9 +138,18 @@ class Parser {
 public:
   Parser()  {
     luaL_openlibs(L);
-    const std::string parserFile = "../lineparser.lua";
     std::ostringstream textBuffer;
-    std::ifstream input (parserFile.c_str());
+    std::ifstream input;
+    const std::array<const char*, 3> parserPaths{
+        "../lineparser.lua", "lineparser.lua", "../../lineparser.lua"};
+    for (const auto* path : parserPaths) {
+      input.open(path);
+      if (input)
+        break;
+      input.clear();
+    }
+    if (!input)
+      throw std::runtime_error("Unable to find lineparser.lua in the current, parent, or grandparent directory.");
     textBuffer << input.rdbuf();
     parserCode = textBuffer.str();
   }
@@ -1089,7 +1103,10 @@ int main(int argc, char **argv) {
   };
 
   while (!exit) {
-    opt = readline(prompt.c_str());
+    char* input = readline(prompt.c_str());
+    if (input == nullptr)
+      break;
+    opt = input;
 
     quededCommands.clear();
     quededCommands = splitCommands(opt);
@@ -1097,6 +1114,7 @@ int main(int argc, char **argv) {
     FIFOingCommands(quantum * 0.5000,quantum,quededCommands, execCommand, isPhraseTimeChanging);
     
     add_history(opt.c_str());
+    std::free(input);
   }
 
   return 0;
