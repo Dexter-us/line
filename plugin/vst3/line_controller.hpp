@@ -31,6 +31,7 @@ class LineController final : public EditControllerEx1,
       const VSTGUI::IUIDescription* description,
       VSTGUI::VST3Editor* editor) override;
   void valueChanged(VSTGUI::CControl* control) override;
+  void didOpen(VSTGUI::VST3Editor* editor) override;
   void willClose(VSTGUI::VST3Editor* editor) override;
 
  private:

@@ -3,6 +3,7 @@
 #include "line_cids.hpp"
 #include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/base/ustring.h"
+#include "vstgui/lib/cframe.h"
 #include "vstgui/lib/controls/cbuttons.h"
 #include "vstgui/lib/controls/ctextedit.h"
 #include "vstgui/lib/controls/ctextlabel.h"
@@ -111,6 +112,13 @@ tresult PLUGIN_API LineController::receiveText(const char8* text) {
 void LineController::willClose(VSTGUI::VST3Editor*) {
   patternEditor_ = nullptr;
   statusLabel_ = nullptr;
+}
+
+void LineController::didOpen(VSTGUI::VST3Editor*) {
+  if (!patternEditor_)
+    return;
+  if (auto* frame = patternEditor_->getFrame())
+    frame->setFocusView(patternEditor_);
 }
 
 bool LineController::writeText(IBStream* state, const std::string& text) {

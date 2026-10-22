@@ -10,16 +10,29 @@
 #include <string>
 #include <array>
 #include <chrono>
+#include <condition_variable>
+#include <cstdint>
+#include <cstring>
+#include <deque>
+#include <functional>
 #include <future>
+#include <memory>
 #include <mutex>
 #include <vector>
 #include <stdexcept>
 #include <stdlib.h>
 #include <algorithm>
 #include <random>
+#include <thread>
 #include <tuple>
 #include <atomic>
 #include <regex>
+
+using std::find_if;
+using std::for_each;
+using std::strlen;
+using std::uint8_t;
+using std::uint64_t;
 
 #if defined(_WIN32)
 #include "windows_readline.h"
