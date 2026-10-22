@@ -42,6 +42,9 @@ accepts up to 255 characters in this supported pattern subset:
 - Eighth-note steps with a leading dot, dotted-quarter steps with a trailing dot
 - Note velocity using `~.7` and tempo using `bpm120`
 
+The editor's **Load** and **Save** buttons use the native file picker and read or
+write a single pattern line in a plain-text `.line` file.
+
 The VST3 pattern editor is intentionally a focused live-coding input, not a port of
 every command in the original CLI's Lua parser. The Windows CI workflow runs the
 parser tests and validates the built plug-in with pluginval. Each successful run

@@ -38,8 +38,14 @@
     <view class="CTextButton" custom-view-name="LineRunButton" origin="26, 310"
           size="132, 38" title="PLAY / STOP" font="LineBody"
           font-color="LineInk" back-color="LinePanel" frame-color="LineAccent"/>
-    <view class="CTextLabel" custom-view-name="LineStatus" origin="176, 318"
-          size="430, 24" font="LineBody" font-color="LineMuted"
+    <view class="CTextButton" custom-view-name="LineLoadButton" origin="172, 310"
+          size="82, 38" title="LOAD" font="LineBody"
+          font-color="LineInk" back-color="LinePanel" frame-color="LineAccent"/>
+    <view class="CTextButton" custom-view-name="LineSaveButton" origin="264, 310"
+          size="82, 38" title="SAVE" font="LineBody"
+          font-color="LineInk" back-color="LinePanel" frame-color="LineAccent"/>
+    <view class="CTextLabel" custom-view-name="LineStatus" origin="356, 318"
+          size="258, 24" font="LineBody" font-color="LineMuted"
           back-color="LinePlate" frame-color="LinePlate"
           text-alignment="left" transparent="false"/>
     <view class="CTextLabel" title="Audio + MIDI output follow the DAW transport and tempo."

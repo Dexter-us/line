@@ -36,6 +36,8 @@ class LineController final : public EditControllerEx1,
 
  private:
   bool setPattern(std::string pattern);
+  void savePatternToFile();
+  void loadPatternFromFile();
   static bool writeText(IBStream* state, const std::string& text);
   static bool readText(IBStream* state, std::string& text);
 

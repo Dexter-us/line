@@ -3,12 +3,16 @@
 #include "line_cids.hpp"
 #include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/base/ustring.h"
+#include "vstgui/lib/cfileselector.h"
 #include "vstgui/lib/cframe.h"
 #include "vstgui/lib/controls/cbuttons.h"
 #include "vstgui/lib/controls/ctextedit.h"
 #include "vstgui/lib/controls/ctextlabel.h"
 
 #include <cstring>
+#include <exception>
+#include <filesystem>
+#include <fstream>
 
 namespace Steinberg::Vst {
 namespace {
@@ -16,6 +20,8 @@ namespace {
 constexpr int32 kPatternControlTag = 4101;
 constexpr int32 kRunControlTag = 4102;
 constexpr int32 kStatusControlTag = 4103;
+constexpr int32 kSaveControlTag = 4104;
+constexpr int32 kLoadControlTag = 4105;
 constexpr std::size_t kMaxSavedPattern = 255;
 constexpr char kEditorName[] = "Editor";
 constexpr char kEditorResource[] = "line.uidesc";
@@ -63,6 +69,14 @@ VSTGUI::CView* LineController::createCustomView(
     button->setValue(armed_ ? 1.0f : 0.0f);
     return button;
   }
+  if (std::strcmp(name, "LineLoadButton") == 0) {
+    return new VSTGUI::CTextButton(VSTGUI::CRect(), this, kLoadControlTag,
+                                   "LOAD");
+  }
+  if (std::strcmp(name, "LineSaveButton") == 0) {
+    return new VSTGUI::CTextButton(VSTGUI::CRect(), this, kSaveControlTag,
+                                   "SAVE");
+  }
   if (std::strcmp(name, "LineStatus") == 0) {
     auto* label = new VSTGUI::CTextLabel(VSTGUI::CRect(), "Pattern ready");
     statusLabel_ = label;
@@ -85,6 +99,10 @@ void LineController::valueChanged(VSTGUI::CControl* control) {
     sendTextMessage(armed_ ? "PLAY" : "STOP");
     if (statusLabel_)
       statusLabel_->setText(armed_ ? "Pattern enabled" : "Pattern stopped");
+  } else if (control->getTag() == kSaveControlTag) {
+    savePatternToFile();
+  } else if (control->getTag() == kLoadControlTag) {
+    loadPatternFromFile();
   }
 }
 
@@ -99,6 +117,115 @@ bool LineController::setPattern(std::string pattern) {
   if (statusLabel_)
     statusLabel_->setText("Pattern sent to Line.");
   return true;
+}
+
+void LineController::savePatternToFile() {
+  auto* frame = patternEditor_ ? patternEditor_->getFrame() : nullptr;
+  if (!frame) {
+    if (statusLabel_)
+      statusLabel_->setText("Pattern editor is not available.");
+    return;
+  }
+
+  auto* selector = VSTGUI::CNewFileSelector::create(
+      frame, VSTGUI::CNewFileSelector::kSelectSaveFile);
+  if (!selector) {
+    if (statusLabel_)
+      statusLabel_->setText("Could not open the save dialog.");
+    return;
+  }
+
+  selector->setTitle("Save Line Pattern");
+  selector->setDefaultSaveName("pattern.line");
+  selector->setDefaultExtension(VSTGUI::CFileExtension("Line pattern", "line"));
+  if (!selector->runModal() || selector->getNumSelectedFiles() == 0) {
+    selector->forget();
+    return;
+  }
+
+  bool saved = false;
+  const auto* selectedPath = selector->getSelectedFile(0);
+  try {
+    if (selectedPath && *selectedPath) {
+      std::ofstream file(std::filesystem::u8path(selectedPath),
+                         std::ios::out | std::ios::trunc);
+      if (file) {
+        file << patternText_ << '\n';
+        file.flush();
+        saved = file.good();
+      }
+    }
+  } catch (const std::exception&) {
+    saved = false;
+  }
+  selector->forget();
+
+  if (statusLabel_)
+    statusLabel_->setText(saved ? "Pattern saved." : "Could not save pattern file.");
+}
+
+void LineController::loadPatternFromFile() {
+  auto* frame = patternEditor_ ? patternEditor_->getFrame() : nullptr;
+  if (!frame) {
+    if (statusLabel_)
+      statusLabel_->setText("Pattern editor is not available.");
+    return;
+  }
+
+  auto* selector =
+      VSTGUI::CNewFileSelector::create(frame, VSTGUI::CNewFileSelector::kSelectFile);
+  if (!selector) {
+    if (statusLabel_)
+      statusLabel_->setText("Could not open the load dialog.");
+    return;
+  }
+
+  selector->setTitle("Load Line Pattern");
+  selector->setDefaultExtension(VSTGUI::CFileExtension("Line pattern", "line"));
+  if (!selector->runModal() || selector->getNumSelectedFiles() == 0) {
+    selector->forget();
+    return;
+  }
+
+  std::string loaded;
+  bool loadFailed = false;
+  const auto* selectedPath = selector->getSelectedFile(0);
+  try {
+    if (!selectedPath || !*selectedPath) {
+      loadFailed = true;
+    } else {
+      std::ifstream file(std::filesystem::u8path(selectedPath));
+      if (!file) {
+        loadFailed = true;
+      } else {
+        std::getline(file, loaded);
+        if (!loaded.empty() && loaded.back() == '\r')
+          loaded.pop_back();
+
+        std::string extraLine;
+        while (std::getline(file, extraLine)) {
+          if (!extraLine.empty()) {
+            loadFailed = true;
+            break;
+          }
+        }
+        if (file.bad() || loaded.size() > kMaxSavedPattern)
+          loadFailed = true;
+      }
+    }
+  } catch (const std::exception&) {
+    loadFailed = true;
+  }
+  selector->forget();
+
+  if (loadFailed) {
+    if (statusLabel_)
+      statusLabel_->setText("Could not load a single-line pattern file.");
+    return;
+  }
+  if (patternEditor_)
+    patternEditor_->setText(loaded.c_str());
+  setPattern(std::move(loaded));
 }
 
 tresult PLUGIN_API LineController::receiveText(const char8* text) {
