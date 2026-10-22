@@ -10,7 +10,9 @@ set(line_vst3_sources
   resource/line.uidesc
 )
 
-smtg_add_vst3plugin(line_instrument ${line_vst3_sources})
+smtg_add_vst3plugin(line_instrument PACKAGE_NAME "Line"
+  SOURCES_LIST ${line_vst3_sources}
+)
 smtg_target_configure_version_file(line_instrument)
 
 target_compile_features(line_instrument PRIVATE cxx_std_17)

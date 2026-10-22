@@ -96,6 +96,7 @@ if(LINE_BUILD_VST3)
     GIT_SUBMODULES_RECURSE TRUE
   )
   FetchContent_MakeAvailable(vst3sdk)
+  set(public_sdk_SOURCE_DIR "${vst3sdk_SOURCE_DIR}/public.sdk")
   add_subdirectory(plugin/vst3)
 endif()
 

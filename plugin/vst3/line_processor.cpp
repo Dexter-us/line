@@ -108,23 +108,80 @@ void LineProcessor::addNoteEvent(IEventList* events, Event::EventTypes type,
   events->addEvent(event);
 }
 
-void LineProcessor::releaseVoices(IEventList* events, int32 sampleOffset,
-                                  double beat) {
-  for (auto& voice : voices_) {
-    if (!voice.active || voice.releasing)
-      continue;
+void LineProcessor::releaseVoice(Voice& voice, IEventList* events,
+                                 int32 sampleOffset, double beat) {
+  if (!voice.active || voice.releasing)
+    return;
+  if (voice.patternGenerated) {
     addNoteEvent(events, Event::kNoteOffEvent,
                  {voice.pitch, static_cast<std::uint8_t>(100)}, sampleOffset,
                  beat);
-    voice.releasing = true;
-    voice.releasePerSample = std::max(
-        voice.level / static_cast<float>(sampleRate_ * 0.035), 0.00001f);
+  }
+  voice.releasing = true;
+  voice.releasePerSample = std::max(
+      voice.level / static_cast<float>(sampleRate_ * 0.035), 0.00001f);
+}
+
+void LineProcessor::releasePatternVoices(IEventList* events,
+                                         int32 sampleOffset, double beat) {
+  for (auto& voice : voices_) {
+    if (voice.patternGenerated)
+      releaseVoice(voice, events, sampleOffset, beat);
+  }
+}
+
+void LineProcessor::processInputEvent(const Event& event) {
+  if (event.type == Event::kNoteOnEvent && event.noteOn.velocity > 0.0f) {
+    const auto& incoming = event.noteOn;
+    auto voice = std::find_if(
+        voices_.begin(), voices_.end(),
+        [](const Voice& item) { return !item.active || item.releasing; });
+    if (voice == voices_.end())
+      voice = voices_.begin();
+
+    voice->pitch = static_cast<std::uint8_t>(
+        std::max(0, std::min(127, static_cast<int>(incoming.pitch))));
+    voice->phase = 0.0;
+    const double frequency =
+        440.0 * std::pow(2.0, (static_cast<int>(voice->pitch) - 69) / 12.0);
+    voice->phaseIncrement = kTwoPi * frequency / sampleRate_;
+    voice->level = std::max(0.0f, std::min(1.0f, incoming.velocity));
+    voice->releasePerSample = 0.0f;
+    voice->ageSamples = 0;
+    voice->channel = incoming.channel;
+    voice->noteId = incoming.noteId;
+    voice->active = true;
+    voice->releasing = false;
+    voice->patternGenerated = false;
+    return;
+  }
+
+  if (event.type != Event::kNoteOffEvent &&
+      !(event.type == Event::kNoteOnEvent && event.noteOn.velocity <= 0.0f))
+    return;
+
+  const auto channel = event.type == Event::kNoteOffEvent
+                           ? event.noteOff.channel
+                           : event.noteOn.channel;
+  const auto pitch = event.type == Event::kNoteOffEvent
+                         ? event.noteOff.pitch
+                         : event.noteOn.pitch;
+  const auto noteId = event.type == Event::kNoteOffEvent
+                          ? event.noteOff.noteId
+                          : event.noteOn.noteId;
+  for (auto& voice : voices_) {
+    if (!voice.active || voice.releasing || voice.patternGenerated ||
+        voice.channel != channel || voice.pitch != pitch)
+      continue;
+    if (noteId >= 0 && voice.noteId >= 0 && voice.noteId != noteId)
+      continue;
+    releaseVoice(voice, nullptr, event.sampleOffset, internalBeat_);
   }
 }
 
 void LineProcessor::startStep(const line::Step& step, IEventList* events,
                               int32 sampleOffset, double beat) {
-  releaseVoices(events, sampleOffset, beat);
+  releasePatternVoices(events, sampleOffset, beat);
   for (std::size_t noteIndex = 0; noteIndex < step.noteCount; ++noteIndex) {
     const auto& note = step.notes[noteIndex];
     auto voice = std::find_if(
@@ -141,8 +198,11 @@ void LineProcessor::startStep(const line::Step& step, IEventList* events,
     voice->level = static_cast<float>(note.velocity) / 127.0f;
     voice->releasePerSample = 0.0f;
     voice->ageSamples = 0;
+    voice->channel = 0;
+    voice->noteId = -1;
     voice->active = true;
     voice->releasing = false;
+    voice->patternGenerated = true;
     addNoteEvent(events, Event::kNoteOnEvent, note, sampleOffset, beat);
   }
   gateClosed_ = step.noteCount == 0;
@@ -159,25 +219,22 @@ tresult PLUGIN_API LineProcessor::process(ProcessData& data) {
   }
 
   auto pattern = std::atomic_load_explicit(&pattern_, std::memory_order_acquire);
-  if (!enabled_.load(std::memory_order_acquire) || !pattern ||
-      pattern->stepCount == 0 ||
-      output.channelBuffers32 == nullptr) {
-    releaseVoices(data.outputEvents, 0, internalBeat_);
-    lastStepIndex_ = line::kMaxSteps;
-    lastStepStartBeat_ = -1.0;
-    return kResultTrue;
-  }
-
   const auto* context = data.processContext;
-  if (context && (context->state & ProcessContext::kPlaying) == 0) {
-    releaseVoices(data.outputEvents, 0, internalBeat_);
+  const bool hostPlaying =
+      !context || (context->state & ProcessContext::kPlaying) != 0;
+  const bool sequenceEnabled =
+      enabled_.load(std::memory_order_acquire) && pattern &&
+      pattern->stepCount > 0;
+  const bool sequencePlaying = hostPlaying && sequenceEnabled;
+  if (!sequencePlaying) {
+    releasePatternVoices(data.outputEvents, 0, internalBeat_);
     lastStepIndex_ = line::kMaxSteps;
     lastStepStartBeat_ = -1.0;
-    internalBeat_ = 0.0;
-    return kResultTrue;
+    if (!hostPlaying)
+      internalBeat_ = 0.0;
   }
 
-  double tempo = pattern->bpm;
+  double tempo = pattern ? pattern->bpm : 120.0;
   if (context && (context->state & ProcessContext::kTempoValid) &&
       std::isfinite(context->tempo) && context->tempo >= 20.0 &&
       context->tempo <= 300.0)
@@ -185,56 +242,78 @@ tresult PLUGIN_API LineProcessor::process(ProcessData& data) {
   const double beatPerSample = tempo / (60.0 * sampleRate_);
 
   double startBeat = internalBeat_;
-  if (context && (context->state & ProcessContext::kProjectTimeMusicValid) &&
+  if (sequencePlaying && context &&
+      (context->state & ProcessContext::kProjectTimeMusicValid) &&
       std::isfinite(context->projectTimeMusic))
     startBeat = context->projectTimeMusic;
 
-  const double patternLength = pattern->lengthInBeats();
-  if (patternLength <= 0.0)
-    return kResultTrue;
-
-  double withinPattern = std::fmod(startBeat, patternLength);
-  if (withinPattern < 0.0)
-    withinPattern += patternLength;
-  double stepStartBeat = startBeat - withinPattern;
+  double stepStartBeat = startBeat;
   std::size_t stepIndex = 0;
-  while (stepIndex + 1 < pattern->stepCount &&
-         withinPattern >= pattern->steps[stepIndex].beats) {
-    withinPattern -= pattern->steps[stepIndex].beats;
-    stepStartBeat += pattern->steps[stepIndex].beats;
-    ++stepIndex;
-  }
-
-  const bool newPosition =
-      lastStepIndex_ != stepIndex ||
-      std::abs(lastStepStartBeat_ - stepStartBeat) > 0.0000001;
-  if (newPosition) {
-    startStep(pattern->steps[stepIndex], data.outputEvents, 0, startBeat);
-    lastStepStartBeat_ = stepStartBeat;
-    lastStepIndex_ = stepIndex;
-    gateClosed_ = false;
-  }
-
-  for (int32 sample = 0; sample < data.numSamples; ++sample) {
-    const double beat = startBeat + sample * beatPerSample;
-    while (beat + 1.0e-10 >=
-           stepStartBeat + pattern->steps[stepIndex].beats) {
-      stepStartBeat += pattern->steps[stepIndex].beats;
-      ++stepIndex;
-      if (stepIndex == pattern->stepCount) {
-        stepIndex = 0;
+  bool hasPattern = false;
+  if (sequencePlaying) {
+    const double patternLength = pattern->lengthInBeats();
+    if (patternLength > 0.0) {
+      double withinPattern = std::fmod(startBeat, patternLength);
+      if (withinPattern < 0.0)
+        withinPattern += patternLength;
+      stepStartBeat = startBeat - withinPattern;
+      while (stepIndex + 1 < pattern->stepCount &&
+             withinPattern >= pattern->steps[stepIndex].beats) {
+        withinPattern -= pattern->steps[stepIndex].beats;
+        stepStartBeat += pattern->steps[stepIndex].beats;
+        ++stepIndex;
       }
-      startStep(pattern->steps[stepIndex], data.outputEvents, sample, beat);
+      hasPattern = true;
+    }
+  }
+
+  if (hasPattern) {
+    const bool newPosition =
+        lastStepIndex_ != stepIndex ||
+        std::abs(lastStepStartBeat_ - stepStartBeat) > 0.0000001;
+    if (newPosition) {
+      startStep(pattern->steps[stepIndex], data.outputEvents, 0, startBeat);
       lastStepStartBeat_ = stepStartBeat;
       lastStepIndex_ = stepIndex;
       gateClosed_ = false;
     }
+  }
 
-    const auto& step = pattern->steps[stepIndex];
-    if (!gateClosed_ && step.noteCount > 0 &&
-        beat >= stepStartBeat + step.beats * kGateRatio) {
-      releaseVoices(data.outputEvents, sample, beat);
-      gateClosed_ = true;
+  int32 inputEventIndex = 0;
+  Event inputEvent{};
+  bool hasInputEvent =
+      data.inputEvents && data.inputEvents->getEventCount() > 0 &&
+      data.inputEvents->getEvent(inputEventIndex, inputEvent) == kResultOk;
+
+  for (int32 sample = 0; sample < data.numSamples; ++sample) {
+    const double beat = startBeat + sample * beatPerSample;
+    while (hasInputEvent && inputEvent.sampleOffset <= sample) {
+      processInputEvent(inputEvent);
+      ++inputEventIndex;
+      hasInputEvent =
+          inputEventIndex < data.inputEvents->getEventCount() &&
+          data.inputEvents->getEvent(inputEventIndex, inputEvent) == kResultOk;
+    }
+
+    if (hasPattern) {
+      while (beat + 1.0e-10 >=
+             stepStartBeat + pattern->steps[stepIndex].beats) {
+        stepStartBeat += pattern->steps[stepIndex].beats;
+        ++stepIndex;
+        if (stepIndex == pattern->stepCount)
+          stepIndex = 0;
+        startStep(pattern->steps[stepIndex], data.outputEvents, sample, beat);
+        lastStepStartBeat_ = stepStartBeat;
+        lastStepIndex_ = stepIndex;
+        gateClosed_ = false;
+      }
+
+      const auto& step = pattern->steps[stepIndex];
+      if (!gateClosed_ && step.noteCount > 0 &&
+          beat >= stepStartBeat + step.beats * kGateRatio) {
+        releasePatternVoices(data.outputEvents, sample, beat);
+        gateClosed_ = true;
+      }
     }
 
     float sampleValue = 0.0f;
@@ -267,7 +346,10 @@ tresult PLUGIN_API LineProcessor::process(ProcessData& data) {
     }
   }
 
-  internalBeat_ = startBeat + data.numSamples * beatPerSample;
+  if (hostPlaying)
+    internalBeat_ = startBeat + data.numSamples * beatPerSample;
+  else
+    internalBeat_ = 0.0;
   return kResultTrue;
 }
 

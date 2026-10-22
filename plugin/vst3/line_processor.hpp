@@ -35,13 +35,19 @@ class LineProcessor final : public AudioEffect {
     float level = 0.0f;
     float releasePerSample = 0.0f;
     std::uint32_t ageSamples = 0;
+    std::int16_t channel = 0;
+    std::int32_t noteId = -1;
     bool active = false;
     bool releasing = false;
+    bool patternGenerated = false;
   };
 
-  void releaseVoices(IEventList* events, int32 sampleOffset, double beat);
+  void releasePatternVoices(IEventList* events, int32 sampleOffset, double beat);
   void startStep(const line::Step& step, IEventList* events, int32 sampleOffset,
                  double beat);
+  void processInputEvent(const Event& event);
+  void releaseVoice(Voice& voice, IEventList* events, int32 sampleOffset,
+                    double beat);
   void addNoteEvent(IEventList* events, Event::EventTypes type,
                     const line::Note& note, int32 sampleOffset, double beat);
   static bool writeText(IBStream* state, const std::string& text);
@@ -49,7 +55,7 @@ class LineProcessor final : public AudioEffect {
 
   std::shared_ptr<const line::Pattern> pattern_;
   std::string patternText_ = "c3 e3 g3 c4";
-  std::array<Voice, line::kMaxChordNotes> voices_{};
+  std::array<Voice, line::kMaxChordNotes * 2> voices_{};
   double internalBeat_ = 0.0;
   double lastStepStartBeat_ = -1.0;
   double sampleRate_ = 44100.0;
