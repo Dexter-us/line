@@ -220,29 +220,30 @@ tresult PLUGIN_API LineProcessor::process(ProcessData& data) {
 
   auto pattern = std::atomic_load_explicit(&pattern_, std::memory_order_acquire);
   const auto* context = data.processContext;
-  const bool hostPlaying =
-      !context || (context->state & ProcessContext::kPlaying) != 0;
+  const bool hostTransportPlaying =
+      context && (context->state & ProcessContext::kPlaying) != 0;
   const bool sequenceEnabled =
       enabled_.load(std::memory_order_acquire) && pattern &&
       pattern->stepCount > 0;
-  const bool sequencePlaying = hostPlaying && sequenceEnabled;
+  const bool sequencePlaying = sequenceEnabled;
   if (!sequencePlaying) {
     releasePatternVoices(data.outputEvents, 0, internalBeat_);
     lastStepIndex_ = line::kMaxSteps;
     lastStepStartBeat_ = -1.0;
-    if (!hostPlaying)
+    if (!hostTransportPlaying)
       internalBeat_ = 0.0;
   }
 
   double tempo = pattern ? pattern->bpm : 120.0;
-  if (context && (context->state & ProcessContext::kTempoValid) &&
+  if (hostTransportPlaying && context &&
+      (context->state & ProcessContext::kTempoValid) &&
       std::isfinite(context->tempo) && context->tempo >= 20.0 &&
       context->tempo <= 300.0)
     tempo = context->tempo;
   const double beatPerSample = tempo / (60.0 * sampleRate_);
 
   double startBeat = internalBeat_;
-  if (sequencePlaying && context &&
+  if (sequencePlaying && hostTransportPlaying && context &&
       (context->state & ProcessContext::kProjectTimeMusicValid) &&
       std::isfinite(context->projectTimeMusic))
     startBeat = context->projectTimeMusic;
@@ -346,9 +347,9 @@ tresult PLUGIN_API LineProcessor::process(ProcessData& data) {
     }
   }
 
-  if (hostPlaying)
+  if (sequencePlaying)
     internalBeat_ = startBeat + data.numSamples * beatPerSample;
-  else
+  else if (!hostTransportPlaying)
     internalBeat_ = 0.0;
   return kResultTrue;
 }

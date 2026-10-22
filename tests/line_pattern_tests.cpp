@@ -53,6 +53,15 @@ void testTempoAndErrors() {
   require(!line::parsePattern("c3", 500.0).error.empty(), "invalid default tempo is rejected");
 }
 
+void testEditorExamplePattern() {
+  const auto parsed =
+      line::parsePattern("bpm120 (c3 e3 g3)~.7 - d3~.5 .g3 b3.");
+  require(static_cast<bool>(parsed), "documented editor example parses");
+  require(parsed.pattern.stepCount == 5, "editor example has five pattern steps");
+  require(std::abs(parsed.pattern.bpm - 120.0) < 0.001,
+          "editor example keeps its tempo");
+}
+
 }  // namespace
 
 int main() {
@@ -60,5 +69,6 @@ int main() {
   testNoteNamesAndDurations();
   testChordsRestsAndVelocity();
   testTempoAndErrors();
+  testEditorExamplePattern();
   std::cout << "Line pattern tests passed.\n";
 }
