@@ -29,13 +29,22 @@ add_library(line_pattern STATIC plugin/line_pattern.cpp)
 target_compile_features(line_pattern PUBLIC cxx_std_17)
 target_include_directories(line_pattern PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin)
 
+add_library(line_midi_file STATIC midi_file.cpp)
+target_compile_features(line_midi_file PUBLIC cxx_std_17)
+target_include_directories(line_midi_file PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
 if(BUILD_TESTING)
   add_executable(line_pattern_tests tests/line_pattern_tests.cpp)
   target_link_libraries(line_pattern_tests PRIVATE line_pattern)
   add_test(NAME line_pattern_tests COMMAND line_pattern_tests)
+
+  add_executable(line_midi_file_tests tests/line_midi_file_tests.cpp)
+  target_link_libraries(line_midi_file_tests PRIVATE line_midi_file)
+  add_test(NAME line_midi_file_tests COMMAND line_midi_file_tests)
 endif()
 
 add_executable("${PROJECT_NAME}" line.cpp)
+target_link_libraries("${PROJECT_NAME}" PRIVATE line_midi_file)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/externals/lua)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/externals/lpeg)

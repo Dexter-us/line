@@ -27,6 +27,8 @@
 #include <tuple>
 #include <atomic>
 #include <regex>
+#include <cctype>
+#include "midi_file.hpp"
 
 using std::find_if;
 using std::for_each;
@@ -54,7 +56,7 @@ extern "C" {
 }
 
 using noteAmpT = std::pair<uint8_t,uint8_t>;
-using phraseT = std::vector<std::vector<std::vector<noteAmpT>>>;
+using phraseT = line::midi::Pattern;
 
 const float DEFAULT_BPM = 60.0;
 const uint64_t REF_BAR_DUR = 4000000; // microseconds
@@ -373,6 +375,7 @@ void displayCommandsList(std::string listVers="") {
     cout << "..l         list sp phrs" << endl;
     cout << "..sf<name>  save file" << endl;
     cout << "..lf<name>  load file" << endl;
+    cout << "..em<name>  export current phrase as MIDI" << endl;
   }
   cout << "----------------------" << endl;
 
@@ -1058,6 +1061,42 @@ int main(int argc, char **argv) {
             std::cout << "File " + filename + " saved.\n";
           } catch (...) {
             std::cerr << "Invalid filename." << std::endl;
+          }
+      } else if (_opt.substr(0,2) == "em") {
+          const std::string name = _opt.substr(2);
+          const std::string baseName =
+              name.empty() ? filenameDefault : name;
+          std::string outputPath = baseName;
+          std::string lowercasePath = outputPath;
+          std::transform(lowercasePath.begin(), lowercasePath.end(),
+                         lowercasePath.begin(), [](unsigned char c) {
+                           return static_cast<char>(std::tolower(c));
+                         });
+          if (!(lowercasePath.size() >= 4 &&
+                lowercasePath.compare(lowercasePath.size() - 4, 4, ".mid") == 0) &&
+              !(lowercasePath.size() >= 5 &&
+                lowercasePath.compare(lowercasePath.size() - 5, 5, ".midi") == 0))
+            outputPath += ".mid";
+
+          if (phrase.empty()) {
+            std::cerr << "Enter a phrase before exporting MIDI.\n";
+          } else if (ch > 15 || (!rNotes && ccCh > 127)) {
+            std::cerr << "MIDI channel or controller is out of range.\n";
+          } else {
+            const auto steps = line::midi::makeSteps(phrase, quantum);
+
+            const auto mode = rNotes ? line::midi::Mode::notes
+                                     : line::midi::Mode::controlChange;
+            const auto events =
+                line::midi::makeEvents(steps, mode, ch, ccCh, muted);
+            std::string error;
+            const auto patternEndTick = static_cast<std::uint64_t>(
+                std::max(1.0, std::round(quantum * 480.0)));
+            if (line::midi::writeStandardMidiFile(outputPath, bpm, events,
+                                                  error, patternEndTick))
+              std::cout << "MIDI file " << outputPath << " exported.\n";
+            else
+              std::cerr << "Could not export MIDI: " << error << '\n';
           }
       } else if (_opt.substr(0,2) == "lf") {
           try {

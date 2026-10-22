@@ -21,7 +21,9 @@ ctest --test-dir build -C Release --output-on-failure
 ```
 
 The Windows command-line version uses the console for input and does not require
-GNU Readline. MIDI output is provided through RtMidi's Windows backend.
+GNU Readline. MIDI output is provided through RtMidi's Windows backend. At the
+`line>` prompt, `em` exports the current phrase to `line.mid`; `emmysong.mid`
+exports it to `mysong.mid` for import into a DAW.
 
 ## VST3 instrument
 
@@ -243,6 +245,11 @@ Save file with *mysynth.line* name
 `sfmysynth`
 
 *Note: Will also save line instance parameters (prompt, channel, notes/cc, range of values)*
+
+**Export the current phrase as a standard MIDI file**
+
+`em` exports the current phrase to `line.mid`; `emmysong.mid` exports it to `mysong.mid`.
+The file includes the current tempo and MIDI channel and can be imported into a DAW.
 
 **Load *.line* file to line**
 
