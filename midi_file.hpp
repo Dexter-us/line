@@ -32,6 +32,14 @@ std::vector<Event> makeEvents(const std::vector<PatternStep>& steps, Mode mode,
                               std::uint8_t channel, std::uint8_t controller,
                               bool muted);
 
+bool durationSecondsToTicks(double seconds, double bpm, std::uint64_t& ticks,
+                            std::string& error);
+
+bool repeatEventsUntil(const std::vector<Event>& phraseEvents,
+                       std::uint64_t phraseDurationTicks,
+                       std::uint64_t targetDurationTicks,
+                       std::vector<Event>& repeatedEvents, std::string& error);
+
 bool writeStandardMidiFile(const std::string& path, double bpm,
                            std::vector<Event> events, std::string& error,
                            std::uint64_t endTick = 0);

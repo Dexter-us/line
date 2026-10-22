@@ -57,6 +57,42 @@ void testPatternTiming() {
           "second subdivision starts after the first");
   require(steps[2].startTick == 960 && steps[2].endTick == 1919,
           "uneven nested phrase timing preserves total phrase length");
+  require(line::midi::makeSteps(pattern, 1e100).empty(),
+          "unrepresentable phrase timing is rejected");
+}
+
+void testRepeatEventsToExactDuration() {
+  const std::vector<line::midi::PatternStep> steps{
+      {0, 479, {{60, 100}}},
+  };
+  const auto phraseEvents =
+      line::midi::makeEvents(steps, line::midi::Mode::notes, 0, 0, false);
+  std::vector<line::midi::Event> repeated;
+  std::string error;
+  require(line::midi::repeatEventsUntil(phraseEvents, 480, 1000, repeated,
+                                        error),
+          "pattern repeats to the requested duration");
+  require(error.empty(), "successful repeat has no error");
+  require(repeated.size() == 6, "final partial pattern is included");
+  require(repeated[0].tick == 0 && repeated[2].tick == 480 &&
+              repeated[4].tick == 960,
+          "pattern note starts repeat at each phrase boundary");
+  require(repeated.back().tick == 1000 && repeated.back().status == 0x80,
+          "a note sounding at the cutoff is released at the exact duration");
+
+  require(!line::midi::repeatEventsUntil(phraseEvents, 0, 1000, repeated,
+                                         error),
+          "zero-length patterns are rejected");
+}
+
+void testSecondsConvertAtCurrentTempo() {
+  std::uint64_t ticks = 0;
+  std::string error;
+  require(line::midi::durationSecondsToTicks(15.0, 120.0, ticks, error),
+          "duration converts to MIDI ticks");
+  require(ticks == 14400, "15 seconds at 120 BPM equals 30 beats");
+  require(!line::midi::durationSecondsToTicks(0.0, 120.0, ticks, error),
+          "zero-second export duration is rejected");
 }
 
 void testControllerEvents() {
@@ -146,6 +182,8 @@ void testTrailingRestsKeepPhraseDuration() {
 int main() {
   testNoteAndChordEvents();
   testPatternTiming();
+  testRepeatEventsToExactDuration();
+  testSecondsConvertAtCurrentTempo();
   testControllerEvents();
   testStandardMidiFile();
   testInvalidTempoIsRejected();

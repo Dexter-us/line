@@ -4,6 +4,7 @@
 #include <cmath>
 #include <fstream>
 #include <limits>
+#include <map>
 #include <tuple>
 
 namespace line::midi {
@@ -61,9 +62,16 @@ std::vector<PatternStep> makeSteps(const Pattern& pattern, double phraseBeats,
     const double stepBeats =
         phraseBeats / static_cast<double>(pattern.size()) /
         static_cast<double>(subPhrase.size());
-    const auto stepTicks = static_cast<std::uint64_t>(
-        std::max(1.0, std::round(stepBeats * ticksPerQuarterNote)));
+    const double roundedStepTicks =
+        std::max(1.0, std::round(stepBeats * ticksPerQuarterNote));
+    if (!std::isfinite(roundedStepTicks) ||
+        roundedStepTicks >=
+            static_cast<double>(std::numeric_limits<std::uint64_t>::max()))
+      return {};
+    const auto stepTicks = static_cast<std::uint64_t>(roundedStepTicks);
     for (const auto& values : subPhrase) {
+      if (stepTicks > std::numeric_limits<std::uint64_t>::max() - tick)
+        return {};
       PatternStep step;
       step.startTick = tick;
       step.endTick = tick + std::max<std::uint64_t>(1, stepTicks - 1);
@@ -111,6 +119,112 @@ std::vector<Event> makeEvents(const std::vector<PatternStep>& steps, Mode mode,
     return isNoteOff(left) && !isNoteOff(right);
   });
   return events;
+}
+
+bool durationSecondsToTicks(double seconds, double bpm, std::uint64_t& ticks,
+                            std::string& error) {
+  error.clear();
+  if (!std::isfinite(seconds) || seconds <= 0.0 || !std::isfinite(bpm) ||
+      bpm <= 0.0) {
+    error = "Duration and tempo must be positive numbers.";
+    return false;
+  }
+
+  const double tickValue = seconds * bpm * 8.0;
+  if (!std::isfinite(tickValue) ||
+      tickValue >=
+          static_cast<double>(std::numeric_limits<std::uint64_t>::max())) {
+    error = "Requested duration is outside the supported range.";
+    return false;
+  }
+  ticks = static_cast<std::uint64_t>(std::max(1.0, std::round(tickValue)));
+  return true;
+}
+
+bool repeatEventsUntil(const std::vector<Event>& phraseEvents,
+                       std::uint64_t phraseDurationTicks,
+                       std::uint64_t targetDurationTicks,
+                       std::vector<Event>& repeatedEvents, std::string& error) {
+  error.clear();
+  repeatedEvents.clear();
+  if (phraseDurationTicks == 0 || targetDurationTicks == 0) {
+    error = "Phrase and export durations must be greater than zero.";
+    return false;
+  }
+  if (phraseEvents.empty())
+    return true;
+
+  constexpr std::uint64_t kMaximumExportEvents = 1000000;
+  const auto phraseCount =
+      targetDurationTicks / phraseDurationTicks +
+      (targetDurationTicks % phraseDurationTicks == 0 ? 0 : 1);
+  if (phraseCount > kMaximumExportEvents / phraseEvents.size()) {
+    error = "Requested duration would create too many MIDI events.";
+    return false;
+  }
+  repeatedEvents.reserve(
+      static_cast<std::size_t>(phraseCount * phraseEvents.size()));
+
+  for (std::uint64_t offset = 0; offset < targetDurationTicks;) {
+    for (const auto& event : phraseEvents) {
+      if (event.tick > std::numeric_limits<std::uint64_t>::max() - offset) {
+        error = "Pattern timing exceeds the supported range.";
+        repeatedEvents.clear();
+        return false;
+      }
+      const auto tick = offset + event.tick;
+      const bool noteOff = isNoteOff(event);
+      if (tick < targetDurationTicks ||
+          (tick == targetDurationTicks && noteOff))
+        repeatedEvents.push_back({tick, event.status, event.data1, event.data2});
+    }
+    if (targetDurationTicks - offset <= phraseDurationTicks)
+      break;
+    offset += phraseDurationTicks;
+  }
+
+  std::stable_sort(repeatedEvents.begin(), repeatedEvents.end(),
+                   [](const Event& left, const Event& right) {
+                     if (left.tick != right.tick)
+                       return left.tick < right.tick;
+                     return isNoteOff(left) && !isNoteOff(right);
+                   });
+
+  std::map<std::pair<std::uint8_t, std::uint8_t>, std::uint32_t> activeNotes;
+  for (const auto& event : repeatedEvents) {
+    const auto type = event.status & 0xF0;
+    const auto key = std::make_pair(
+        static_cast<std::uint8_t>(event.status & 0x0F), event.data1);
+    if (type == 0x90 && event.data2 != 0) {
+      ++activeNotes[key];
+    } else if (type == 0x80 || (type == 0x90 && event.data2 == 0)) {
+      auto active = activeNotes.find(key);
+      if (active != activeNotes.end() && active->second > 0)
+        --active->second;
+    }
+  }
+
+  for (const auto& active : activeNotes) {
+    for (std::uint32_t count = 0; count < active.second; ++count) {
+      if (repeatedEvents.size() >= kMaximumExportEvents) {
+        error = "Requested duration would create too many MIDI events.";
+        repeatedEvents.clear();
+        return false;
+      }
+      repeatedEvents.push_back(
+          {targetDurationTicks,
+           static_cast<std::uint8_t>(0x80 + active.first.first),
+           active.first.second, 0});
+    }
+  }
+
+  std::stable_sort(repeatedEvents.begin(), repeatedEvents.end(),
+                   [](const Event& left, const Event& right) {
+                     if (left.tick != right.tick)
+                       return left.tick < right.tick;
+                     return isNoteOff(left) && !isNoteOff(right);
+                   });
+  return true;
 }
 
 bool writeStandardMidiFile(const std::string& path, double bpm,

@@ -10,6 +10,7 @@
 #include <string>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
@@ -28,6 +29,7 @@
 #include <atomic>
 #include <regex>
 #include <cctype>
+#include <limits>
 #include "midi_file.hpp"
 
 using std::find_if;
@@ -375,7 +377,7 @@ void displayCommandsList(std::string listVers="") {
     cout << "..l         list sp phrs" << endl;
     cout << "..sf<name>  save file" << endl;
     cout << "..lf<name>  load file" << endl;
-    cout << "..em<name>  export current phrase as MIDI" << endl;
+    cout << "..em [file] [seconds] export phrase as MIDI" << endl;
   }
   cout << "----------------------" << endl;
 
@@ -1063,9 +1065,61 @@ int main(int argc, char **argv) {
             std::cerr << "Invalid filename." << std::endl;
           }
       } else if (_opt.substr(0,2) == "em") {
-          const std::string name = _opt.substr(2);
-          const std::string baseName =
-              name.empty() ? filenameDefault : name;
+          const std::string arguments = _opt.substr(2);
+          std::string baseName = filenameDefault;
+          std::string durationToken;
+          double requestedSeconds = 0.0;
+          bool hasDuration = false;
+          bool invalidArguments = false;
+
+          const auto parseSeconds = [](const std::string& token,
+                                       double& seconds) {
+            try {
+              std::size_t consumed = 0;
+              seconds = std::stod(token, &consumed);
+              return consumed == token.size() && std::isfinite(seconds);
+            } catch (...) {
+              return false;
+            }
+          };
+
+          if (!arguments.empty() &&
+              std::isspace(static_cast<unsigned char>(arguments.front()))) {
+            std::istringstream parsedArguments(arguments);
+            std::string first;
+            std::string second;
+            std::string extra;
+            if (!(parsedArguments >> first)) {
+              invalidArguments = true;
+            } else if (parsedArguments >> second) {
+              if (parsedArguments >> extra)
+                invalidArguments = true;
+              baseName = first;
+              durationToken = second;
+              hasDuration = true;
+            } else if (parseSeconds(first, requestedSeconds)) {
+              hasDuration = true;
+            } else {
+              baseName = first;
+            }
+          } else if (!arguments.empty()) {
+            baseName = arguments;
+          }
+
+          if (hasDuration) {
+            const bool parsed = durationToken.empty()
+                                    ? std::isfinite(requestedSeconds)
+                                    : parseSeconds(durationToken,
+                                                   requestedSeconds);
+            if (!parsed || requestedSeconds <= 0.0)
+              invalidArguments = true;
+          }
+
+          if (invalidArguments) {
+            std::cerr << "Usage: em [filename.mid] [seconds]\n";
+            return false;
+          }
+
           std::string outputPath = baseName;
           std::string lowercasePath = outputPath;
           std::transform(lowercasePath.begin(), lowercasePath.end(),
@@ -1083,19 +1137,44 @@ int main(int argc, char **argv) {
           } else if (ch > 15 || (!rNotes && ccCh > 127)) {
             std::cerr << "MIDI channel or controller is out of range.\n";
           } else {
+            const double phraseEndTickValue = std::round(quantum * 480.0);
+            if (!std::isfinite(phraseEndTickValue) ||
+                phraseEndTickValue < 1.0 ||
+                phraseEndTickValue >=
+                    static_cast<double>(std::numeric_limits<std::uint64_t>::max())) {
+              std::cerr << "Phrase duration cannot be represented in a MIDI file.\n";
+              return false;
+            }
+            const auto patternEndTick =
+                static_cast<std::uint64_t>(phraseEndTickValue);
             const auto steps = line::midi::makeSteps(phrase, quantum);
+            if (steps.empty()) {
+              std::cerr << "Phrase timing cannot be represented in a MIDI file.\n";
+              return false;
+            }
 
             const auto mode = rNotes ? line::midi::Mode::notes
                                      : line::midi::Mode::controlChange;
-            const auto events =
-                line::midi::makeEvents(steps, mode, ch, ccCh, muted);
+            auto events = line::midi::makeEvents(steps, mode, ch, ccCh, muted);
+            std::uint64_t exportEndTick = patternEndTick;
             std::string error;
-            const auto patternEndTick = static_cast<std::uint64_t>(
-                std::max(1.0, std::round(quantum * 480.0)));
-            if (line::midi::writeStandardMidiFile(outputPath, bpm, events,
-                                                  error, patternEndTick))
+
+            if (hasDuration) {
+              if (line::midi::durationSecondsToTicks(
+                      requestedSeconds, bpm, exportEndTick, error)) {
+                std::vector<line::midi::Event> repeatedEvents;
+                if (line::midi::repeatEventsUntil(
+                        events, patternEndTick, exportEndTick, repeatedEvents,
+                        error))
+                  events = std::move(repeatedEvents);
+              }
+            }
+
+            if (error.empty() &&
+                line::midi::writeStandardMidiFile(outputPath, bpm, events,
+                                                  error, exportEndTick))
               std::cout << "MIDI file " << outputPath << " exported.\n";
-            else
+            if (!error.empty())
               std::cerr << "Could not export MIDI: " << error << '\n';
           }
       } else if (_opt.substr(0,2) == "lf") {

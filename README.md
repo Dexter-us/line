@@ -248,8 +248,11 @@ Save file with *mysynth.line* name
 
 **Export the current phrase as a standard MIDI file**
 
-`em` exports the current phrase to `line.mid`; `emmysong.mid` exports it to `mysong.mid`.
-The file includes the current tempo and MIDI channel and can be imported into a DAW.
+`em` exports the current phrase once to `line.mid`; `emmysong.mid` exports it once
+to `mysong.mid`. Add a duration in seconds to repeat the phrase and cut the final
+pass at that duration: `em 15` writes a 15-second `line.mid`, and
+`em mysong.mid 15` writes a 15-second `mysong.mid`. The file includes the current
+tempo and MIDI channel and can be imported into a DAW.
 
 **Load *.line* file to line**
 
