@@ -706,7 +706,8 @@ void timeStamping(phraseT _phrase) {
       for (auto& notes : subsubPhrase)
         _notes.emplace_back(notes);
   
-      _midiEvents->emplace_back((MidiEvent){_notes, _phase, static_cast<float>(_phase + incr - 0.001)});
+      _midiEvents->emplace_back(
+          MidiEvent{_notes, _phase, static_cast<float>(_phase + incr - 0.001)});
       _notes.clear();
       _phase += incr;
     }
