@@ -44,7 +44,9 @@ accepts up to 255 characters in this supported pattern subset:
 
 The VST3 pattern editor is intentionally a focused live-coding input, not a port of
 every command in the original CLI's Lua parser. The Windows CI workflow runs the
-parser tests and validates the built plug-in with pluginval.
+parser tests and validates the built plug-in with pluginval. Each successful run
+also uploads a `dexter-us-line-windows` artifact containing `line.exe` and
+`Line.vst3`; download it from the workflow run's **Artifacts** section.
 
 ---
 
