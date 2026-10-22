@@ -2,7 +2,13 @@ cmake_minimum_required(VERSION 3.19)
 
 project(lua C)
 
-add_library(${PROJECT_NAME} SHARED
+if(WIN32)
+  set(LUA_LIBRARY_TYPE STATIC)
+else()
+  set(LUA_LIBRARY_TYPE SHARED)
+endif()
+
+add_library(${PROJECT_NAME} ${LUA_LIBRARY_TYPE}
   lapi.c
   lauxlib.c
   lbaselib.c

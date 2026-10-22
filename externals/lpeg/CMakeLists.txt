@@ -2,7 +2,13 @@ cmake_minimum_required(VERSION 3.19)
 
 project(lpeg C)
 
-add_library("${PROJECT_NAME}" SHARED
+if(WIN32)
+  set(LPEG_LIBRARY_TYPE STATIC)
+else()
+  set(LPEG_LIBRARY_TYPE SHARED)
+endif()
+
+add_library("${PROJECT_NAME}" ${LPEG_LIBRARY_TYPE}
   lpcap.c
   lpcode.c
   lpcset.c
