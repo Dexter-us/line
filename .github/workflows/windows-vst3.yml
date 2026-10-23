@@ -73,6 +73,11 @@ jobs:
           }
           Copy-Item $cli.FullName (Join-Path $dist "line.exe")
           Copy-Item $plugin.FullName (Join-Path $dist "Line.vst3") -Recurse -Force
+          $parser = Join-Path $env:GITHUB_WORKSPACE "lineparser.lua"
+          if (-not (Test-Path $parser)) {
+            throw "lineparser.lua is missing from the source checkout."
+          }
+          Copy-Item $parser (Join-Path $dist "lineparser.lua")
 
       - name: Upload Windows binaries
         uses: actions/upload-artifact@v4

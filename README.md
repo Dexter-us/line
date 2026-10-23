@@ -50,8 +50,7 @@ write a single pattern line in a plain-text `.line` file.
 The VST3 pattern editor is intentionally a focused live-coding input, not a port of
 every command in the original CLI's Lua parser. The Windows CI workflow runs the
 parser tests and validates the built plug-in with pluginval. Each successful run
-also uploads a `dexter-us-line-windows` artifact containing `line.exe` and
-`Line.vst3`; download it from the workflow run's **Artifacts** section.
+also uploads a `dexter-us-line-windows` artifact containing `line.exe`, `lineparser.lua`, and `Line.vst3`; keep the Lua file beside the executable and download the complete artifact from the workflow run's **Artifacts** section.
 
 ---
 

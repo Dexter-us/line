@@ -121,7 +121,6 @@ void enableBufferedInput() {
 class Parser {
   std::string restSymbol = {REST_SYMBOL};
   lua_State *L = luaL_newstate();
-  std::string parserCode;
   size_t tableSize,subtableSize,subsubtableSize;
   std::string musicStructType;
 
@@ -161,7 +160,7 @@ public:
     std::ostringstream textBuffer;
     std::ifstream input;
     const std::array<const char*, 3> parserPaths{
-        "../lineparser.lua", "lineparser.lua", "../../lineparser.lua"};
+        "lineparser.lua", "../lineparser.lua", "../../lineparser.lua"};
     for (const auto* path : parserPaths) {
       input.open(path);
       if (input)
@@ -171,7 +170,24 @@ public:
     if (!input)
       throw std::runtime_error("Unable to find lineparser.lua in the current, parent, or grandparent directory.");
     textBuffer << input.rdbuf();
-    parserCode = textBuffer.str();
+    const auto parserCode = textBuffer.str();
+    const int status = luaL_dostring(L, parserCode.c_str());
+    if (status != LUA_OK) {
+      const char* message = lua_tostring(L, -1);
+      const std::string error = message ? message : "unknown Lua error";
+      lua_pop(L, 1);
+      throw std::runtime_error("Unable to initialize lineparser.lua: " + error);
+    }
+
+    for (const auto* function : std::array<const char*, 2>{
+             "line_parse_phrase", "line_rescale_phrase"}) {
+      lua_getglobal(L, function);
+      const bool isAvailable = lua_isfunction(L, -1);
+      lua_pop(L, 1);
+      if (!isAvailable)
+        throw std::runtime_error(
+            "lineparser.lua is outdated or incomplete; use the matching file shipped with line.exe.");
+    }
   }
   ~Parser() {lua_close(L);};
 
@@ -183,15 +199,15 @@ public:
   }
 
   std::string rescaling(std::string _phrase, std::pair<float,float> _range) {
-    auto parseRange = parserCode + " range_min =\"" + std::to_string(_range.first) +  "\" ;range_max=\"" + std::to_string(_range.second) +
-     "\" ;rs = table.concat(lpeg.match(rangeG,\"" + _phrase + "\"),\" \")";
-
-    const int status = luaL_dostring(L, parseRange.c_str());
+    lua_getglobal(L, "line_rescale_phrase");
+    lua_pushlstring(L, _phrase.data(), _phrase.size());
+    lua_pushnumber(L, _range.first);
+    lua_pushnumber(L, _range.second);
+    const int status = lua_pcall(L, 3, 1, 0);
     if (status == LUA_OK) {
-      lua_getglobal(L,"rs");
-
       if (lua_isstring(L,-1))
         _phrase = lua_tostring(L,-1);
+      lua_pop(L, 1);
     } else
         reportLuaError(L);
 
@@ -203,11 +219,11 @@ public:
     std::vector<std::vector<noteAmpT>> subv{};
     std::vector<noteAmpT> subsubv{};
 
-    auto p = parserCode + " phrs_matching = lpeg.match(phraseG, \"" + _phrase +
-    "\"); t = phrs_matching and phrs_matching or NO_MATCH";
-
-    const int status = luaL_dostring(L, p.c_str());
+    lua_getglobal(L, "line_parse_phrase");
+    lua_pushlstring(L, _phrase.data(), _phrase.size());
+    const int status = lua_pcall(L, 1, 1, 0);
     if (status == LUA_OK) {
+      lua_setglobal(L, "t");
       lua_getglobal(L, "t");
 
       // 3D Lua table to c++ vector

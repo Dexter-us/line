@@ -136,6 +136,10 @@ local phraseG = lpeg.P {"phrase",
   note = noteP;
 } * -1
 
+function line_parse_phrase(input)
+  return lpeg.match(phraseG, input) or NO_MATCH
+end
+
 -- Phrases of different ranges other then MIDI 0-127
 function rescaleToMIDI(v)
   v = (v-range_min)*127/(range_max-range_min)
@@ -149,3 +153,13 @@ local rangeG = lpeg.P {"prange",
   prange = lpeg.Ct(lpeg.Cg(((V"range")^1 * (sep^1 * V"range")^0)^1));
   range = rangeP;
 } * -1
+
+function line_rescale_phrase(input, minValue, maxValue)
+  range_min = minValue
+  range_max = maxValue
+  local values = lpeg.match(rangeG, input)
+  if not values then
+    return nil
+  end
+  return table.concat(values, " ")
+end
