@@ -94,20 +94,17 @@ endif()
 if(BUILD_TESTING)
   add_test(
     NAME line_cli_note_phrase_tests
-    COMMAND ${CMAKE_COMMAND} -E env "LUA_CPATH=$<TARGET_FILE:lpeg>"
-            $<TARGET_FILE:${PROJECT_NAME}> --check-phrase
+    COMMAND $<TARGET_FILE:${PROJECT_NAME}> --check-phrase
             "c3 - e3 - g3 - c4"
   )
   add_test(
     NAME line_cli_chord_phrase_tests
-    COMMAND ${CMAKE_COMMAND} -E env "LUA_CPATH=$<TARGET_FILE:lpeg>"
-            $<TARGET_FILE:${PROJECT_NAME}> --check-phrase
+    COMMAND $<TARGET_FILE:${PROJECT_NAME}> --check-phrase
             "(c3 e3 g3)~.7 - d3~.5 .g3 b3."
   )
   add_test(
     NAME line_cli_rejects_unspaced_rest
-    COMMAND ${CMAKE_COMMAND} -E env "LUA_CPATH=$<TARGET_FILE:lpeg>"
-            $<TARGET_FILE:${PROJECT_NAME}> --check-phrase
+    COMMAND $<TARGET_FILE:${PROJECT_NAME}> --check-phrase
             "c3 - e3 - g3 -c4"
   )
   set_tests_properties(

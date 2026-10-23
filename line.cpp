@@ -56,6 +56,7 @@ extern "C" {
 	#include "lualib.h"
 	#include "lauxlib.h"
 }
+extern "C" int luaopen_lpeg(lua_State *L);
 
 using noteAmpT = std::pair<uint8_t,uint8_t>;
 using phraseT = line::midi::Pattern;
@@ -155,6 +156,8 @@ class Parser {
 public:
   Parser()  {
     luaL_openlibs(L);
+    luaL_requiref(L, "lpeg", luaopen_lpeg, 1);
+    lua_pop(L, 1);
     std::ostringstream textBuffer;
     std::ifstream input;
     const std::array<const char*, 3> parserPaths{
