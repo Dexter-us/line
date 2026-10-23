@@ -172,23 +172,25 @@ public:
   }
   ~Parser() {lua_close(L);};
 
-  void reportLuaErrorsOnExit(lua_State *L, int status) {
-    printf("--- %s\n", lua_tostring(L, -1));
-    lua_pop(L, 1); // remove error message from Lua's stack
-    exit(EXIT_FAILURE);
+  void reportLuaError(lua_State *L) {
+    const char* message = lua_tostring(L, -1);
+    std::cerr << "Phrase parser error: "
+              << (message ? message : "unknown Lua error") << '\n';
+    lua_pop(L, 1);
   }
 
   std::string rescaling(std::string _phrase, std::pair<float,float> _range) {
     auto parseRange = parserCode + " range_min =\"" + std::to_string(_range.first) +  "\" ;range_max=\"" + std::to_string(_range.second) +
      "\" ;rs = table.concat(lpeg.match(rangeG,\"" + _phrase + "\"),\" \")";
 
-    if (int luaError = luaL_dostring(L, parseRange.c_str()) == LUA_OK) {
+    const int status = luaL_dostring(L, parseRange.c_str());
+    if (status == LUA_OK) {
       lua_getglobal(L,"rs");
 
       if (lua_isstring(L,-1))
         _phrase = lua_tostring(L,-1);
     } else
-        reportLuaErrorsOnExit(L, luaError);
+        reportLuaError(L);
 
     return _phrase;
   }
@@ -201,13 +203,13 @@ public:
     auto p = parserCode + " phrs_matching = lpeg.match(phraseG, \"" + _phrase +
     "\"); t = phrs_matching and phrs_matching or NO_MATCH";
 
-    if (int luaError = luaL_dostring(L, p.c_str()) == LUA_OK) {
+    const int status = luaL_dostring(L, p.c_str());
+    if (status == LUA_OK) {
       lua_getglobal(L, "t");
 
       // 3D Lua table to c++ vector
       if (lua_istable(L,-1)) {
         lua_pushnil(L);
-        lua_gettable(L,-2);
         tableSize = lua_rawlen(L,-2);
         int8_t note, amp;
 
@@ -282,7 +284,7 @@ public:
         }
       }
     } else
-        reportLuaErrorsOnExit(L, luaError);
+        reportLuaError(L);
 
     return v;
   }
@@ -784,6 +786,16 @@ void nextPhraseComputing(std::unique_ptr<std::vector<MidiEvent>>& _midiEvents, s
 }
 
 int main(int argc, char **argv) {
+  if (argc == 3 && std::strcmp(argv[1], "--check-phrase") == 0) {
+    const auto parsed = parser.parsing(argv[2]);
+    if (parsed.empty()) {
+      std::cerr << "Invalid phrase.\n";
+      return EXIT_FAILURE;
+    }
+    std::cout << "Phrase is valid.\n";
+    return EXIT_SUCCESS;
+  }
+
   auto midiOut = RtMidiOut();
   midiOut.openPort(0);
 
