@@ -107,11 +107,34 @@ if(BUILD_TESTING)
     COMMAND $<TARGET_FILE:${PROJECT_NAME}> --check-phrase
             "c3 - e3 - g3 -c4"
   )
+  add_test(
+    NAME line_cli_export_first_phrase
+    COMMAND $<TARGET_FILE:${PROJECT_NAME}> --export-midi
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/export_test.line
+            ${CMAKE_CURRENT_BINARY_DIR}/line_cli_export_first.mid 15
+  )
+  add_test(
+    NAME line_cli_export_all_phrases
+    COMMAND $<TARGET_FILE:${PROJECT_NAME}> --export-midi
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/export_test.line
+            ${CMAKE_CURRENT_BINARY_DIR}/line_cli_export_all.mid 15
+            --all-phrases --bpm 120
+  )
   set_tests_properties(
     line_cli_note_phrase_tests
     line_cli_chord_phrase_tests
     line_cli_compact_rest_phrase_tests
+    line_cli_export_first_phrase
+    line_cli_export_all_phrases
     PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  )
+  set_tests_properties(
+    line_cli_export_first_phrase
+    PROPERTIES PASS_REGULAR_EXPRESSION "Exported 1 saved phrase"
+  )
+  set_tests_properties(
+    line_cli_export_all_phrases
+    PROPERTIES PASS_REGULAR_EXPRESSION "Exported 2 saved phrases"
   )
 endif()
 

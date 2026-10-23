@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstring>
 #include <deque>
+#include <filesystem>
 #include <functional>
 #include <future>
 #include <memory>
@@ -703,6 +704,224 @@ bool parsePhrase(std::string& _phrase) {
   return true;
 }
 
+int exportMidiFromLineFile(int argc, char** argv) {
+  constexpr const char* usage =
+      "Usage: line --export-midi <input.line> <output.mid> <seconds> "
+      "[--all-phrases] [--bpm <tempo>]";
+  if (argc < 5) {
+    std::cerr << usage << '\n';
+    return EXIT_FAILURE;
+  }
+
+  const auto parseNumber = [](const std::string& text, double& value) {
+    try {
+      std::size_t consumed = 0;
+      value = std::stod(text, &consumed);
+      return consumed == text.size() && std::isfinite(value);
+    } catch (...) {
+      return false;
+    }
+  };
+  const auto parseInteger = [](const std::string& text, int& value) {
+    try {
+      std::size_t consumed = 0;
+      value = std::stoi(text, &consumed);
+      return consumed == text.size();
+    } catch (...) {
+      return false;
+    }
+  };
+  const auto trim = [](std::string value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos)
+      return std::string{};
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+  };
+
+  const std::string inputArgument = argv[2];
+  std::filesystem::path inputPath(inputArgument);
+  std::string inputExtension = inputPath.extension().string();
+  std::transform(inputExtension.begin(), inputExtension.end(),
+                 inputExtension.begin(), [](unsigned char c) {
+                   return static_cast<char>(std::tolower(c));
+                 });
+  if (inputExtension != ".line")
+    inputPath += ".line";
+
+  std::filesystem::path outputPath(argv[3]);
+  std::string outputExtension = outputPath.extension().string();
+  std::transform(outputExtension.begin(), outputExtension.end(),
+                 outputExtension.begin(), [](unsigned char c) {
+                   return static_cast<char>(std::tolower(c));
+                 });
+  if (outputExtension != ".mid" && outputExtension != ".midi")
+    outputPath += ".mid";
+
+  double seconds = 0.0;
+  if (!parseNumber(argv[4], seconds) || seconds <= 0.0) {
+    std::cerr << "Export duration must be a positive number of seconds.\n";
+    return EXIT_FAILURE;
+  }
+
+  bool allPhrases = false;
+  double exportBpm = DEFAULT_BPM;
+  for (int i = 5; i < argc; ++i) {
+    const std::string argument = argv[i];
+    if (argument == "--all-phrases") {
+      allPhrases = true;
+    } else if (argument == "--bpm" && i + 1 < argc) {
+      if (!parseNumber(argv[++i], exportBpm) || exportBpm <= 0.0) {
+        std::cerr << "Tempo must be a positive number.\n";
+        return EXIT_FAILURE;
+      }
+    } else {
+      std::cerr << "Unknown or incomplete export option: " << argument
+                << '\n' << usage << '\n';
+      return EXIT_FAILURE;
+    }
+  }
+
+  std::ifstream file(inputPath);
+  if (!file) {
+    std::cerr << "Could not open Line file: " << inputPath.string() << '\n';
+    return EXIT_FAILURE;
+  }
+
+  std::array<std::string, 5> header;
+  for (auto& line : header) {
+    if (!std::getline(file, line)) {
+      std::cerr << "Line file is incomplete; expected its five settings lines.\n";
+      return EXIT_FAILURE;
+    }
+    line = trim(std::move(line));
+  }
+
+  if (header[0] != "0" && header[0] != "1") {
+    std::cerr << "Line file has an invalid notes/controller mode.\n";
+    return EXIT_FAILURE;
+  }
+  const bool notesMode = header[0] == "1";
+
+  int savedChannelOrController = 0;
+  if (!parseInteger(header[1], savedChannelOrController) ||
+      savedChannelOrController < 0 ||
+      savedChannelOrController > (notesMode ? 15 : 127)) {
+    std::cerr << "Line file has an invalid MIDI channel or controller value.\n";
+    return EXIT_FAILURE;
+  }
+
+  double rangeMinimum = 0.0;
+  double rangeMaximum = 127.0;
+  if (!parseNumber(header[3], rangeMinimum) ||
+      !parseNumber(header[4], rangeMaximum) ||
+      rangeMinimum >= rangeMaximum) {
+    std::cerr << "Line file has an invalid value range.\n";
+    return EXIT_FAILURE;
+  }
+
+  std::vector<std::string> savedPhrases;
+  std::string line;
+  while (std::getline(file, line)) {
+    line = trim(std::move(line));
+    if (!line.empty())
+      savedPhrases.push_back(std::move(line));
+  }
+  if (savedPhrases.empty()) {
+    std::cerr << "Line file contains no saved phrases.\n";
+    return EXIT_FAILURE;
+  }
+
+  const std::size_t phraseCount = allPhrases ? savedPhrases.size() : 1;
+  constexpr std::uint16_t ticksPerQuarterNote = 480;
+  const auto phraseDurationTicks = static_cast<std::uint64_t>(
+      std::llround(static_cast<double>(REF_QUANTUM) * ticksPerQuarterNote));
+  if (phraseCount >
+      std::numeric_limits<std::uint64_t>::max() / phraseDurationTicks) {
+    std::cerr << "The Line file contains too many phrases to export.\n";
+    return EXIT_FAILURE;
+  }
+  const auto sequenceDurationTicks =
+      phraseDurationTicks * static_cast<std::uint64_t>(phraseCount);
+
+  const auto mode = notesMode ? line::midi::Mode::notes
+                              : line::midi::Mode::controlChange;
+  const auto midiChannel = static_cast<std::uint8_t>(
+      notesMode ? savedChannelOrController : 0);
+  const auto controller = static_cast<std::uint8_t>(
+      notesMode ? 0 : savedChannelOrController);
+  std::vector<line::midi::Event> sequenceEvents;
+  std::uint64_t phraseOffset = 0;
+  constexpr std::size_t maximumSequenceEvents = 1000000;
+
+  for (std::size_t i = 0; i < phraseCount; ++i) {
+    std::string phraseText = savedPhrases[i];
+    if (rangeMinimum != 0.0 || rangeMaximum != 127.0) {
+      phraseText = parser.rescaling(
+          std::move(phraseText),
+          {static_cast<float>(rangeMinimum), static_cast<float>(rangeMaximum)});
+    }
+
+    const auto pattern = parser.parsing(std::move(phraseText));
+    if (pattern.empty()) {
+      std::cerr << "Saved phrase " << (i + 1)
+                << " could not be parsed; no MIDI file was written.\n";
+      return EXIT_FAILURE;
+    }
+
+    const auto steps = line::midi::makeSteps(
+        pattern, REF_QUANTUM, ticksPerQuarterNote);
+    if (steps.empty()) {
+      std::cerr << "Saved phrase " << (i + 1)
+                << " has unsupported timing.\n";
+      return EXIT_FAILURE;
+    }
+    const auto phraseEvents =
+        line::midi::makeEvents(steps, mode, midiChannel, controller, false);
+    if (phraseEvents.size() >
+        maximumSequenceEvents -
+            std::min(maximumSequenceEvents, sequenceEvents.size())) {
+      std::cerr << "The selected phrases contain too many MIDI events.\n";
+      return EXIT_FAILURE;
+    }
+    for (const auto& event : phraseEvents) {
+      if (event.tick >
+          std::numeric_limits<std::uint64_t>::max() - phraseOffset) {
+        std::cerr << "Line file timing exceeds the supported range.\n";
+        return EXIT_FAILURE;
+      }
+      sequenceEvents.push_back(
+          {phraseOffset + event.tick, event.status, event.data1, event.data2});
+    }
+    phraseOffset += phraseDurationTicks;
+  }
+
+  std::uint64_t targetDurationTicks = 0;
+  std::string error;
+  if (!line::midi::durationSecondsToTicks(
+          seconds, exportBpm, targetDurationTicks, error)) {
+    std::cerr << "Could not export MIDI: " << error << '\n';
+    return EXIT_FAILURE;
+  }
+
+  std::vector<line::midi::Event> repeatedEvents;
+  if (!line::midi::repeatEventsUntil(sequenceEvents, sequenceDurationTicks,
+                                     targetDurationTicks, repeatedEvents,
+                                     error) ||
+      !line::midi::writeStandardMidiFile(outputPath.string(), exportBpm,
+                                         std::move(repeatedEvents), error,
+                                         targetDurationTicks)) {
+    std::cerr << "Could not export MIDI: " << error << '\n';
+    return EXIT_FAILURE;
+  }
+
+  std::cout << "Exported " << phraseCount << " saved phrase"
+            << (phraseCount == 1 ? "" : "s") << " to "
+            << outputPath.string() << " (" << seconds << " seconds at "
+            << exportBpm << " BPM).\n";
+  return EXIT_SUCCESS;
+}
+
 inline float barEndTimeRef() {
   return ceil(quantum) - (pow(bpm,0.2) * 0.005);
 }
@@ -805,6 +1024,9 @@ void nextPhraseComputing(std::unique_ptr<std::vector<MidiEvent>>& _midiEvents, s
 }
 
 int main(int argc, char **argv) {
+  if (argc >= 2 && std::strcmp(argv[1], "--export-midi") == 0)
+    return exportMidiFromLineFile(argc, argv);
+
   if (argc == 3 && std::strcmp(argv[1], "--check-phrase") == 0) {
     const auto parsed = parser.parsing(argv[2]);
     if (parsed.empty()) {

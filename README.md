@@ -21,9 +21,26 @@ ctest --test-dir build -C Release --output-on-failure
 ```
 
 The Windows command-line version uses the console for input and does not require
-GNU Readline. MIDI output is provided through RtMidi's Windows backend. At the
-`line>` prompt, `em` exports the current phrase to `line.mid`; `emmysong.mid`
-exports it to `mysong.mid` for import into a DAW.
+GNU Readline. MIDI output is provided through RtMidi's Windows backend. Keep
+`lineparser.lua` from the same build beside `line.exe`; the CLI loads its phrase
+grammar at startup. At the `line>` prompt, `em` exports the current phrase to
+`line.mid`; `emmysong.mid` exports it to `mysong.mid` for import into a DAW.
+
+Export a saved `.line` file directly to MIDI without opening the interactive
+sequencer or connecting a MIDI output device:
+
+```powershell
+.\build\Release\line.exe --export-midi sampler.line song.mid 15
+```
+
+By default this exports the first saved phrase, repeating it to the requested
+duration in seconds. Add `--all-phrases` to join all saved phrases in file order
+before repeating the sequence. `.line` files do not store tempo, so export
+defaults to 60 BPM; use `--bpm 120` (or another positive tempo) to override it:
+
+```powershell
+.\build\Release\line.exe --export-midi sampler.line song.mid 30 --all-phrases --bpm 120
+```
 
 ## VST3 instrument
 
@@ -50,7 +67,9 @@ write a single pattern line in a plain-text `.line` file.
 The VST3 pattern editor is intentionally a focused live-coding input, not a port of
 every command in the original CLI's Lua parser. The Windows CI workflow runs the
 parser tests and validates the built plug-in with pluginval. Each successful run
-also uploads a `dexter-us-line-windows` artifact containing `line.exe`, `lineparser.lua`, and `Line.vst3`; keep the Lua file beside the executable and download the complete artifact from the workflow run's **Artifacts** section.
+also uploads a `dexter-us-line-windows` artifact containing `line.exe`,
+`lineparser.lua`, and `Line.vst3`; download the complete artifact from the
+workflow run's **Artifacts** section.
 
 ---
 
